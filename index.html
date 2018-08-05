@@ -1,0 +1,351 @@
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="ok.2nd">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=0">
+<link rel="shortcut icon" href="favicon/maps-and-flags.png" type="image/png">
+<link rel="icon" href="favicon/maps-and-flags.png" type="image/png">
+<title>2nd マップ (Yahoo)</title>
+<script src="https://map.yahooapis.jp/js/V1/jsapi?appid=dj00aiZpPUhMWDYyMEtEeFVSNyZzPWNvbnN1bWVyc2VjcmV0Jng9YzY-"></script>
+<script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+<style>
+html {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+body {
+	margin: 0 0 80px 0;
+	padding: 0 0 80px 0;
+	width: 100%;
+	height: 100%;
+}
+body, input, button, textarea {
+	font-size: 12px;
+	line-height: 1.0;
+}
+#map_canvas {
+	width: 100%;
+	height: 100%;
+}
+#control_box {
+	position: absolute; top: 0px; left: 0px;
+	width: 1020px;
+	height: 0px;
+}
+#form_box {
+	margin: 1px 0 0 1px;
+}
+#route_navi {
+	position: absolute;
+	top: 30px; left: 0px; width: 70px; height: 32px;
+	border: 1px solid #666; padding: 6px; line-height: 1.4;
+	background-color: rgba( 255, 255, 255, 0.8 );
+}
+</style>
+</head>
+<body>
+<div id="map_canvas"></div>
+<div id="control_box">
+<form id="form_box" method="POST" action="">
+	<input type="button" value="現在地" onclick="viewCurrentLocation();">
+	<input type="button" value="Off" onclick="viewCurrentOff();">
+	<input type="button" value="地図" onclick="ymap.setLayerSet(Y.LayerSetId.NORMAL)">
+	<input type="button" value="写真" onclick="ymap.setLayerSet(Y.LayerSetId.PHOTO)">
+	<input type="button" value="雨雲" onclick="weatherOnOff();">
+	<label><input id="cb_route" type="checkbox" onclick="plotRouteOnOff()" style="display:none;margin-left:3px;"><span class="label">ルート</span></label>
+	<select id="walk_car" onChange="walkCarChange()">
+		<option value="walk" selected>徒歩
+		<option value="car">車
+	</select>
+</form>
+<div id="route_navi" style="display:none;">
+<span id="route_all_time"></span><br>
+</div>
+</div>
+<script>
+var ymap = new Y.Map("map_canvas");
+window.onload = function() {
+	ymap.setConfigure('dragging',true);
+//	ymap.setConfigure('singleClickPan',true);
+	ymap.setConfigure('doubleClickZoom',true);
+	ymap.setConfigure('continuousZoom',true);
+	ymap.setConfigure('scrollWheelZoom',true);
+//	ymap.addControl(new Y.LayerSetControl());
+//	ymap.addControl(new Y.SliderZoomControlVertical());
+//	ymap.addControl(new Y.HomeControl());
+	ymap.addControl(new Y.ScaleControl());
+	ymap.addControl(new Y.SearchControl(), new Y.ControlPosition(Y.ControlPosition.BOTTOM_LEFT, new Y.Size(0, 0)));	// 検索
+//	var plugin = new Y.RouteSearchPlugin();		// 経路探索
+//	ymap.addPlugin(plugin);
+	ymap.bind('click', mapClicked);
+	navigator.geolocation.getCurrentPosition(function(position){
+		var lat = position.coords.latitude;
+		var lng = position.coords.longitude;
+		var latlng = new Y.LatLng(lat, lng);
+		ymap.drawMap(latlng, 17, Y.LayerSetId.NORMAL);
+	});
+	viewCurrentLocation();
+	$(window).bind("resize", function(e){
+		ymap.updateSize();
+	});
+}
+// *********************************************
+var plotRouteOn = false;
+var routeMode_fromCurrent = false;;
+var routeSearchLayer = false;
+var routeStartLatLng = false;
+var routeEndLatLng = false;
+var marker_LatLng = false;
+var current_LatLng = false;
+var clickPosLatLng = false;
+var targrt_marker = false;
+var targrt_label = false;
+// *********************************************
+function walkCarChange() {
+	if (plotRouteOn) {
+		if (routeSearchLayer) {
+			ymap.removeLayer(routeSearchLayer);
+			routeSearchLayer = new Y.RouteSearchLayer();
+			routeSearchLayer.bind('drawend', function(result) {
+				dispRouteInfo(result);
+			});
+			ymap.addLayer(routeSearchLayer);
+			createRoute(routeStartLatLng, routeEndLatLng);
+		}
+	}
+}
+function plotRouteOnOff() {
+	if (targrt_label) {
+		ymap.removeFeature(targrt_label);
+	}
+	if (plotRouteOn == false) {
+		plotRouteOn = true;
+		if (current_LatLng && marker_LatLng) {
+			target_RouteGo();
+		}
+	} else {
+		if (routeSearchLayer) {
+			ymap.removeLayer(routeSearchLayer);
+			routeSearchLayer = false;
+		}
+		plotRouteClear();
+		plotRouteOn = false;
+	}
+}
+var targrt_markerClicked = function() {
+	if (targrt_label) {
+		ymap.removeFeature(targrt_label);
+	}
+//	var latlng = this.getLatLng();
+	var html = '';
+	html += '<a style="" href="javascript:plotRouteCurrent2Marker()">現在地からのルート</a><br><br>';
+	html += '<a style="" href="javascript:deleteTargrtMarker()">マーカー削除</a>';
+	targrt_label = new Y.Label(new Y.LatLng(marker_LatLng.lat(), marker_LatLng.lng()), html);
+	ymap.addFeature(targrt_label);
+}
+var mapClicked = function(latlng) {
+	clickPosLatLng = latlng;
+	if (!plotRouteOn) {
+		if (targrt_marker) {
+			if (targrt_label) {
+				ymap.removeFeature(targrt_label);
+			}
+			var html = '';
+			html += '<a style="" href="javascript:plotRouteCurrent2ClickPos()">現在地からのルート</a><br><br>';
+			html += '<a style="" href="javascript:plotRouteMarker2ClickPos()">マーカーからのルート</a><br><br>';
+			html += '<a style="" href="javascript:newTargrtMarker()">新マーカー</a>';
+			targrt_label = new Y.Label(new Y.LatLng(latlng.lat(), latlng.lng()), html);
+			ymap.addFeature(targrt_label);
+			return;
+		}
+		target_marker_create(latlng);
+	}
+	if (routeMode_fromCurrent) {
+		routeEndLatLng = latlng;
+		ymap.removeLayer(routeSearchLayer);
+		routeSearchLayer = new Y.RouteSearchLayer();
+		routeSearchLayer.bind('drawend', function(result) {
+			dispRouteInfo(result);
+		});
+		ymap.addLayer(routeSearchLayer);
+		createRoute(routeStartLatLng, routeEndLatLng);
+		if (targrt_label) {
+			ymap.removeFeature(targrt_label);
+		}
+	}
+}
+function deleteTargrtMarker() {
+	if (targrt_label) {
+		ymap.removeFeature(targrt_label);
+	}
+	if (targrt_marker) {
+		ymap.removeFeature(targrt_marker);
+		targrt_marker = false;
+	}
+}
+function plotRouteCurrent2Marker() {
+	deleteTargrtMarker();
+	ymap.removeFeature(targrt_label);
+	routeStartLatLng = current_LatLng;
+	routeEndLatLng = marker_LatLng;
+	RouteView(routeStartLatLng, routeEndLatLng);
+	routeMode_fromCurrent = true;
+}
+function plotRouteCurrent2ClickPos() {
+	ymap.removeFeature(targrt_label);
+	routeStartLatLng = current_LatLng;
+	routeEndLatLng = clickPosLatLng;
+	RouteView(routeStartLatLng, routeEndLatLng);
+	routeMode_fromCurrent = true;
+}
+function plotRouteMarker2ClickPos() {
+	ymap.removeFeature(targrt_label);
+	routeStartLatLng = marker_LatLng;
+	routeEndLatLng = clickPosLatLng;
+	RouteView(routeStartLatLng, routeEndLatLng);
+	routeMode_fromCurrent = true;
+}
+function RouteView(start, end) {
+	if (routeSearchLayer) {
+		ymap.removeLayer(routeSearchLayer);
+	}
+	routeSearchLayer = new Y.RouteSearchLayer();
+	routeSearchLayer.bind('drawend', function(result) {
+		dispRouteInfo(result);
+	});
+	ymap.addLayer(routeSearchLayer);
+	plotRouteOn = true;
+	createRoute(start, end);
+	$("#cb_route").prop('checked', true);
+	$("#cb_route").css('display','');
+}
+function newTargrtMarker () {
+	target_marker_create(clickPosLatLng);
+}
+function target_marker_create(latlng) {
+	if (targrt_marker) {
+		deleteTargrtMarker();
+	}
+	marker_LatLng = latlng;
+	var icon = new Y.Icon('icon/red-dot.png');
+	targrt_marker = new Y.Marker(latlng, {icon: icon});
+	targrt_marker.bind('click', targrt_markerClicked);
+	ymap.addFeature(targrt_marker);
+}
+var createRoute = function(start, end) {
+	if (!plotRouteOn) {
+		return;
+	}
+	if (start && end) {
+		if ($("#walk_car").val() == 'car') {
+			var use_car = true;
+		} else {
+			var use_car = false;
+		}
+		var config = {
+			enableRestrict: true,	// 交通規制を考慮する
+			useCar: use_car,	// 自動車を使う
+			useFerry: true		// フェリーを使用する
+		};
+		routeSearchLayer.execute([start, end], config);
+	}
+	ymap.unbind('click');
+}
+function target_RouteGo() {
+	if (routeSearchLayer) {
+		ymap.removeLayer(routeSearchLayer);
+	}
+	routeSearchLayer = new Y.RouteSearchLayer();
+	routeSearchLayer.bind('drawend', function(result) {
+		dispRouteInfo(result);
+	});
+	ymap.addLayer(routeSearchLayer);
+	routeStartLatLng = current_LatLng;
+	routeEndLatLng = marker_LatLng;
+	createRoute(routeStartLatLng, routeEndLatLng);
+}
+function plotRouteClear() {
+	$("#route_navi").css("display","none");
+}
+var markerCenter = false;
+var CurrentLocation = false;
+var watch_id = 0;
+var current_marker = false;
+var viewCurrent_first = false;
+function viewCurrentOff() {
+	if( watch_id > 0 ) {
+		navigator.geolocation.clearWatch(watch_id);
+	}
+	CurrentLocation = false;
+	watch_id = 0;
+	if (current_marker) {
+		ymap.removeFeature(current_marker);
+		viewCurrent_first = false;
+	}
+}
+function viewCurrentLocation() {
+	if (CurrentLocation) {
+		viewCurrentOff(); // reset
+	}
+	CurrentLocation = true;
+	var position_options = {
+		enableHighAccuracy: true
+	};
+	watch_id = navigator.geolocation.watchPosition(function(position) {
+		var lat = position.coords.latitude;
+		var lng = position.coords.longitude;
+		var latlng = new Y.LatLng(lat, lng);
+		current_LatLng = latlng;
+		if (current_marker) {
+			ymap.removeFeature(current_marker);
+		}
+		if (!viewCurrent_first) {
+			ymap.setCenter(latlng);
+			viewCurrent_first = true;
+		}
+		showCurrentMarker(latlng);
+	}, null, position_options);
+}
+var dispRouteInfo = function(result) {
+	$("#route_navi").css("display","");
+	var route_all = cal_dis_time(result.TotalDistance , result.TotalTime);
+	document.getElementById("route_all_time").innerHTML = '<strong>' + route_all + '</strong>';
+}
+function cal_dis_time(distance, duration) {
+	hh = 0;
+	dstKm = Math.round(distance / 100) / 10;
+	if (duration >= 60)	{
+		hh = Math.floor(duration / 60);
+		duration = duration % 60;
+	}
+	var res = '';
+	if (hh > 0) {
+		res += hh + '時間';
+	}
+	res += duration + '分'
+	res += '<br>' + dstKm + 'km';
+	return res;
+}
+function showCurrentMarker(latlng) {
+	var icon = new Y.Icon('icon/hiking.png');
+	current_marker = new Y.Marker(latlng, {icon: icon});
+	ymap.addFeature(current_marker);
+}
+// 雨雲
+var weatherOn = false;
+function weatherOnOff() {
+	if (!weatherOn) {
+		if (ymap.getZoom() > 16) {
+			ymap.setZoom(15, true);
+		}
+		ymap.setConfigure('weatherOverlay', true);
+		weatherOn = true;
+	} else {
+		ymap.setConfigure('weatherOverlay', false);
+		weatherOn = false;
+	}
+}
+</script>
+</body>
+</html>
