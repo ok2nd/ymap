@@ -141,7 +141,7 @@ var targrt_markerClicked = function() {
 	var html = '';
 	html += '<a style="" href="javascript:plotRouteCurrent2Marker()">現在地からのルート</a><br><br>';
 	html += '<a style="" href="javascript:deleteTargrtMarker()">マーカー削除</a>';
-	targrt_label = new Y.Label(new Y.LatLng(marker_LatLng.lat(), marker_LatLng.lng()), html);
+	targrt_label = new Y.Label(new Y.LatLng(marker_LatLng.lat(), marker_LatLng.lng()), html, {offset:new Y.Point(0,-20)});
 	ymap.addFeature(targrt_label);
 }
 var mapClicked = function(latlng) {
@@ -155,7 +155,7 @@ var mapClicked = function(latlng) {
 			html += '<a style="" href="javascript:plotRouteCurrent2ClickPos()">現在地からのルート</a><br><br>';
 			html += '<a style="" href="javascript:plotRouteMarker2ClickPos()">マーカーからのルート</a><br><br>';
 			html += '<a style="" href="javascript:newTargrtMarker()">新マーカー</a>';
-			targrt_label = new Y.Label(new Y.LatLng(latlng.lat(), latlng.lng()), html);
+			targrt_label = new Y.Label(new Y.LatLng(latlng.lat(), latlng.lng()), html, {offset:new Y.Point(0,-20)});
 			ymap.addFeature(targrt_label);
 			return;
 		}
